@@ -8,8 +8,16 @@ services:
   redis:
     image: redis:latest
     container_name: redis-uber
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "6379:6379"
+    volumes:
+      - uber-redis-data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     networks:
       - uber-network
 
@@ -25,7 +33,13 @@ services:
     ports:
       - "3306:3306"
     volumes:
-      - mysql-data:/var/lib/mysql
+      - uber-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-proot" ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
     networks:
       - uber-network
 
@@ -61,11 +75,61 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: [ "CMD", "kafka-topics", "--bootstrap-server", "localhost:29092", "--list" ]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
+    networks:
+      - uber-network
+
+  # ─────────────────────────────────────────
+  # MICROSERVICES
+  # ─────────────────────────────────────────
+  location-service:
+    build: ./location-service
+    container_name: location-service
+    ports:
+      - "8082:8082"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: on-failure
+    networks:
+      - uber-network
+
+  ride-service:
+     build: ./ride-service
+     container_name: ride-service
+     ports:
+       - "8083:8083"
+     depends_on:
+       mysql:
+         condition: service_healthy
+       kafka:
+         condition: service_healthy
+     restart: on-failure
+     networks:
+       - uber-network
+
+  matching-service:
+    build: ./matching-service
+    container_name: matching-service
+    ports:
+      - "8084:8084"
+    depends_on:
+      location-service:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+    restart: on-failure
     networks:
       - uber-network
 
 volumes:
-  mysql-data:
+  uber-mysql-data:
+  uber-redis-data:
 
 networks:
   uber-network:

@@ -24,7 +24,6 @@ public class Ride {
     private String riderId;
 
     // who accepted the ride (null until matched)
-    @Column(nullable = false)
     private String driverId;
 
     @Column(nullable = false)
